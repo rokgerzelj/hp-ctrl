@@ -1,16 +1,20 @@
 mod state;
 mod store;
 
-use json_typegen::json_typegen;
 use rumqttc::{AsyncClient, MqttOptions, QoS};
-
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
-json_typegen!(
-    "SensorData",
-    r#"{"battery":100,"humidity":53.18,"linkquality":43,"temperature":20.66,"voltage":3000}"#
-);
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct SensorData {
+    battery: i64,
+    humidity: f64,
+    linkquality: i64,
+    temperature: f64,
+    voltage: i64,
+    time: Option<time::OffsetDateTime>,
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -20,7 +24,10 @@ async fn main() {
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
 
-    for device_id in ["0xa4c1385a6271b083", "0xa4c13853590d2d26"] {
+    let temp_sensors = ["0xa4c1385a6271b083", "0xa4c13853590d2d26"];
+    let thermostats = [];
+
+    for device_id in temp_sensors.iter().chain(thermostats.iter()) {
         client
             .subscribe(format!("zigbee2mqtt/{device_id}"), QoS::AtLeastOnce)
             .await
@@ -38,20 +45,30 @@ async fn main() {
             let locked_store = store.lock().await;
             let maybe_data = locked_store.get("zigbee2mqtt/0xa4c1385a6271b083").cloned();
 
-            if let Some(sensor_data) = maybe_data {
-                let temp = format!("/I10000={:.1}", sensor_data.temperature);
-                if let Err(err) = client
-                    .publish("BSB-LAN", QoS::AtLeastOnce, false, temp)
-                    .await
-                {
-                    println!("{}", err);
+            match maybe_data {
+                Some(SensorData {
+                    temperature,
+                    time: Some(time),
+                    ..
+                }) if (time::OffsetDateTime::now_utc() - time) < time::Duration::minutes(40) => {
+                    let temp = format!("I10000={:.1}", temperature);
+                    if let Err(err) = client
+                        .publish("BSB-LAN", QoS::AtLeastOnce, false, temp.clone())
+                        .await
+                    {
+                        println!("{}", err);
+                    } else {
+                        println!("Sent temp to BSB-LAN, {}", temp);
+                    }
                 }
+                _ => println!("Current data is outdated or time field is empty"),
             }
         }
     });
 
     loop {
         let notification = eventloop.poll().await;
+        //println!("{:?}", notification);
 
         match notification {
             Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(rumqttc::Publish {
@@ -64,7 +81,13 @@ async fn main() {
 
                     if let Ok(sensor_data) = maybe_data {
                         let mut locked_store = mqtt_store.lock().await;
-                        locked_store.insert(topic, sensor_data);
+
+                        let timed_data = SensorData {
+                            time: Some(time::OffsetDateTime::now_utc()),
+                            ..sensor_data
+                        };
+                        locked_store.insert(topic.clone(), timed_data);
+                        println!("Data updated {}, {:?}", topic, sensor_data);
                     }
                 } else {
                     println!("Couldn't parse payload")
