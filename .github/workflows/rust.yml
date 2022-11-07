@@ -20,3 +20,11 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Build for production
+      run: cargo build --release
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v3.1.1
+      with:
+        name: hp-ctrl
+        path: target/release/hp-ctrl
+
