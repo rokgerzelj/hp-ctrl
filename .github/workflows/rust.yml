@@ -2,8 +2,6 @@ name: Rust
 
 on:
   push:
-    tags:
-      - v**
       
 env:
   CARGO_TERM_COLOR: always
@@ -17,9 +15,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
@@ -63,9 +61,9 @@ jobs:
       TARGET: ${{ matrix.TARGET }}
       OS: ${{ matrix.OS }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
@@ -119,25 +117,8 @@ jobs:
           mv ./target/$TARGET/release/$EXEC ./$EXEC
           tar -czf ./artifacts/$NAME-$TARGET-$TAG.tar.gz $EXEC
       - name: Archive artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: result
           path: |
             ./artifacts
-
-  # deploys to github releases on tag
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: result
-          path: ./artifacts
-      - name: List
-        run: find ./artifacts
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ./artifacts/*.tar.gz
